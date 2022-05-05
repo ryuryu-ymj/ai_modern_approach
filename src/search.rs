@@ -112,10 +112,8 @@ where
     F: Fn(&Node<P>) -> u32,
 {
     let node = Node::root(problem.initial());
-    let mut frontier: BinaryHeap<OrderdByKey<u32, Rc<Node<P>>>> =
-        BinaryHeap::new();
-    frontier.push(OrderdByKey::new(eval(&node), node));
-    let mut reached = HashMap::new();
+    let mut reached = HashMap::from([(problem.initial(), node.path_cost)]);
+    let mut frontier = BinaryHeap::from([OrderdByKey::new(eval(&node), node)]);
     while let Some(node) = frontier.pop() {
         let node = node.value;
         if problem.is_goal(&node.state) {
@@ -225,12 +223,16 @@ mod test {
         let expected_dst = 16;
         let mut expected = expected_path.into_iter().rev();
         let mut solution = &uniform_cost_search(&problem).unwrap();
-        assert_eq!(solution.path_cost, expected_dst);
-        assert_eq!(solution.state, expected.next().unwrap());
+        // assert_eq!(solution.path_cost, expected_dst);
+        // assert_eq!(solution.state, expected.next().unwrap());
+        println!("{}", solution.path_cost);
+        print!("{} ", solution.state);
         while let Some(parent) = &solution.parent {
             solution = parent;
-            assert_eq!(solution.state, expected.next().unwrap());
+            print!("{} ", solution.state);
+            // assert_eq!(solution.state, expected.next().unwrap());
         }
+        assert!(false);
     }
 
     struct EightPuzzle {
