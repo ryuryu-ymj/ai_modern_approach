@@ -3,13 +3,12 @@ use std::{
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     fmt::Debug,
     hash::Hash,
-    marker::PhantomData,
     rc::Rc,
 };
 
 pub trait Problem {
     type State: Copy + Eq + Hash + Debug;
-    type Action: Copy + Eq;
+    type Action: Copy + Eq + Debug;
     fn initial(&self) -> Self::State;
     fn actions(&self, s: &Self::State) -> Cow<[Self::Action]>;
     fn result(&self, s: &Self::State, a: &Self::Action) -> Self::State;
@@ -80,7 +79,7 @@ where
     K: Ord,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.key.cmp(&other.key))
+        Some(self.cmp(other))
     }
 }
 impl<K, V> Ord for OrderdByKey<K, V>
@@ -223,16 +222,12 @@ mod test {
         let expected_dst = 16;
         let mut expected = expected_path.into_iter().rev();
         let mut solution = &uniform_cost_search(&problem).unwrap();
-        // assert_eq!(solution.path_cost, expected_dst);
-        // assert_eq!(solution.state, expected.next().unwrap());
-        println!("{}", solution.path_cost);
-        print!("{} ", solution.state);
+        assert_eq!(solution.path_cost, expected_dst);
+        assert_eq!(solution.state, expected.next().unwrap());
         while let Some(parent) = &solution.parent {
             solution = parent;
-            print!("{} ", solution.state);
-            // assert_eq!(solution.state, expected.next().unwrap());
+            assert_eq!(solution.state, expected.next().unwrap());
         }
-        assert!(false);
     }
 
     struct EightPuzzle {
