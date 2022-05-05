@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 
-trait Problem {
+pub trait Problem {
     type State: Copy + Eq + Hash + Debug;
     type Action: Copy + Eq;
     fn initial(&self) -> Self::State;
@@ -17,7 +17,7 @@ trait Problem {
     fn is_goal(&self, s: &Self::State) -> bool;
 }
 
-struct Node<P: Problem> {
+pub struct Node<P: Problem> {
     state: P::State,
     parent: Option<Rc<Node<P>>>,
     action: Option<P::Action>,
@@ -49,63 +49,46 @@ impl<P: Problem> Node<P> {
     }
 }
 
-trait NodeEval<P: Problem, E: NodeEval<P, E>> {
-    fn eval(node: &Node<P>) -> u32;
-}
-
-struct NodeWrapper<P: Problem, E: NodeEval<P, E>> {
-    node: Rc<Node<P>>,
-    phantom: PhantomData<E>,
-}
-
-impl<P, E> NodeWrapper<P, E>
+struct OrderdByKey<K, V>
 where
-    P: Problem,
-    E: NodeEval<P, E>,
+    K: Ord,
 {
-    fn eval(&self) -> u32 {
-        E::eval(&self.node)
-    }
+    key: K,
+    value: V,
+}
 
-    fn from(node: Rc<Node<P>>) -> NodeWrapper<P, E> {
-        NodeWrapper {
-            node,
-            phantom: PhantomData,
-        }
+impl<K, V> OrderdByKey<K, V>
+where
+    K: Ord,
+{
+    fn new(key: K, value: V) -> OrderdByKey<K, V> {
+        OrderdByKey { key, value }
     }
 }
 
-impl<P, E> PartialEq for NodeWrapper<P, E>
+impl<K, V> PartialEq for OrderdByKey<K, V>
 where
-    P: Problem,
-    E: NodeEval<P, E>,
+    K: Ord,
 {
     fn eq(&self, other: &Self) -> bool {
-        self.eval().eq(&other.eval())
+        self.key.eq(&other.key)
     }
 }
-impl<P, E> Eq for NodeWrapper<P, E>
+impl<K, V> Eq for OrderdByKey<K, V> where K: Ord {}
+impl<K, V> PartialOrd for OrderdByKey<K, V>
 where
-    P: Problem,
-    E: NodeEval<P, E>,
-{
-}
-impl<P, E> PartialOrd for NodeWrapper<P, E>
-where
-    P: Problem,
-    E: NodeEval<P, E>,
+    K: Ord,
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+        Some(self.key.cmp(&other.key))
     }
 }
-impl<P, E> Ord for NodeWrapper<P, E>
+impl<K, V> Ord for OrderdByKey<K, V>
 where
-    P: Problem,
-    E: NodeEval<P, E>,
+    K: Ord,
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.eval().cmp(&other.eval()).reverse()
+        self.key.cmp(&other.key).reverse()
     }
 }
 
@@ -115,25 +98,26 @@ where
 {
     let s = &node.state;
     let mut ret = Vec::new();
-    for action in problem.actions(&s).iter() {
-        let t = problem.result(&s, action);
-        let cost = node.path_cost + problem.action_cost(&s, action);
+    for action in problem.actions(s).iter() {
+        let t = problem.result(s, action);
+        let cost = node.path_cost + problem.action_cost(s, action);
         ret.push(Node::child(t, node.clone(), *action, cost))
     }
     ret
 }
 
-fn best_first_search<P, E>(problem: &P) -> Option<Rc<Node<P>>>
+fn best_first_search<P, F>(problem: &P, eval: F) -> Option<Rc<Node<P>>>
 where
     P: Problem,
-    E: NodeEval<P, E>,
+    F: Fn(&Node<P>) -> u32,
 {
     let node = Node::root(problem.initial());
-    let mut frontier: BinaryHeap<NodeWrapper<P, E>> = BinaryHeap::new();
-    frontier.push(NodeWrapper::from(node));
+    let mut frontier: BinaryHeap<OrderdByKey<u32, Rc<Node<P>>>> =
+        BinaryHeap::new();
+    frontier.push(OrderdByKey::new(eval(&node), node));
     let mut reached = HashMap::new();
     while let Some(node) = frontier.pop() {
-        let node = node.node;
+        let node = node.value;
         if problem.is_goal(&node.state) {
             return Some(node);
         }
@@ -141,14 +125,14 @@ where
             let s = child.state;
             if !reached.contains_key(&s) || child.path_cost < reached[&s] {
                 reached.insert(s, child.path_cost);
-                frontier.push(NodeWrapper::from(child));
+                frontier.push(OrderdByKey::new(eval(&child), child));
             }
         }
     }
     None
 }
 
-fn breadth_first_search<P>(problem: &P) -> Option<Rc<Node<P>>>
+pub fn breadth_first_search<P>(problem: &P) -> Option<Rc<Node<P>>>
 where
     P: Problem,
 {
@@ -173,15 +157,8 @@ where
     None
 }
 
-struct UCSEval;
-impl<P: Problem> NodeEval<P, UCSEval> for UCSEval {
-    fn eval(node: &Node<P>) -> u32 {
-        node.path_cost
-    }
-}
-
-fn uniform_cost_search<P: Problem>(problem: &P) -> Option<Rc<Node<P>>> {
-    return best_first_search::<P, UCSEval>(problem);
+pub fn uniform_cost_search<P: Problem>(problem: &P) -> Option<Rc<Node<P>>> {
+    best_first_search::<P, _>(problem, |node| node.path_cost)
 }
 
 #[cfg(test)]
