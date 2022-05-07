@@ -6,6 +6,17 @@ use std::{
     rc::Rc,
 };
 
+pub struct Complexity {
+    pub time: usize,
+    pub space: usize,
+}
+
+impl Complexity {
+    fn new() -> Complexity {
+        Complexity { time: 0, space: 0 }
+    }
+}
+
 pub trait Problem {
     type State: Copy + Eq + Hash + Debug;
     type Action: Copy + Eq + Debug;
@@ -17,10 +28,10 @@ pub trait Problem {
 }
 
 pub struct Node<P: Problem> {
-    state: P::State,
-    parent: Option<Rc<Node<P>>>,
-    action: Option<P::Action>,
-    path_cost: u32,
+    pub state: P::State,
+    pub parent: Option<Rc<Node<P>>>,
+    pub action: Option<P::Action>,
+    pub path_cost: u32,
 }
 
 impl<P: Problem> Node<P> {
@@ -105,57 +116,89 @@ where
     ret
 }
 
-fn best_first_search<P, F>(problem: &P, eval: F) -> Option<Rc<Node<P>>>
+fn best_first_search<P, F>(
+    problem: &P,
+    eval: F,
+) -> (Option<Rc<Node<P>>>, Complexity)
 where
     P: Problem,
     F: Fn(&Node<P>) -> u32,
 {
+    let mut comp = Complexity::new();
     let node = Node::root(problem.initial());
     let mut reached = HashMap::from([(problem.initial(), node.path_cost)]);
     let mut frontier = BinaryHeap::from([OrderdByKey::new(eval(&node), node)]);
     while let Some(node) = frontier.pop() {
         let node = node.value;
         if problem.is_goal(&node.state) {
-            return Some(node);
+            return (Some(node), comp);
         }
         for child in expand(problem, node) {
+            comp.time += 1;
             let s = child.state;
             if !reached.contains_key(&s) || child.path_cost < reached[&s] {
                 reached.insert(s, child.path_cost);
                 frontier.push(OrderdByKey::new(eval(&child), child));
             }
         }
+        comp.space = comp.space.max(frontier.len());
     }
-    None
+    (None, comp)
 }
 
-pub fn breadth_first_search<P>(problem: &P) -> Option<Rc<Node<P>>>
+pub fn breadth_first_search<P>(problem: &P) -> (Option<Rc<Node<P>>>, Complexity)
 where
     P: Problem,
 {
+    let mut comp = Complexity::new();
     let node = Node::root(problem.initial());
     if problem.is_goal(&node.state) {
-        return Some(node);
+        return (Some(node), comp);
     }
     let mut frontier = VecDeque::from([node]);
     let mut reached = HashSet::from([problem.initial()]);
     while let Some(node) = frontier.pop_front() {
         for child in expand(problem, node) {
+            comp.time += 1;
             let s = child.state;
             if problem.is_goal(&s) {
-                return Some(child);
+                return (Some(child), comp);
             }
             if !reached.contains(&s) {
                 reached.insert(s);
                 frontier.push_back(child);
             }
         }
+        comp.space = comp.space.max(frontier.len());
     }
-    None
+    (None, comp)
 }
 
-pub fn uniform_cost_search<P: Problem>(problem: &P) -> Option<Rc<Node<P>>> {
+pub fn uniform_cost_search<P: Problem>(
+    problem: &P,
+) -> (Option<Rc<Node<P>>>, Complexity) {
     best_first_search::<P, _>(problem, |node| node.path_cost)
+}
+
+pub fn a_star_search<P, F>(
+    problem: &P,
+    hueristic: F,
+) -> (Option<Rc<Node<P>>>, Complexity)
+where
+    P: Problem,
+    F: Fn(&Node<P>) -> u32,
+{
+    best_first_search::<P, _>(problem, |node| node.path_cost + hueristic(node))
+}
+
+pub fn solution<P: Problem>(node: Rc<Node<P>>) -> Vec<Rc<Node<P>>> {
+    let mut node = node;
+    let mut v = vec![node.clone()];
+    while let Some(parent) = &node.parent {
+        node = parent.clone();
+        v.push(node.clone());
+    }
+    v.into_iter().rev().collect()
 }
 
 #[cfg(test)]
@@ -221,7 +264,7 @@ mod test {
         let expected_path = [0, 2, 3, 5, 4, 6];
         let expected_dst = 16;
         let mut expected = expected_path.into_iter().rev();
-        let mut solution = &uniform_cost_search(&problem).unwrap();
+        let mut solution = &uniform_cost_search(&problem).0.unwrap();
         assert_eq!(solution.path_cost, expected_dst);
         assert_eq!(solution.state, expected.next().unwrap());
         while let Some(parent) = &solution.parent {
@@ -289,7 +332,35 @@ mod test {
             initial: (4, [1, 2, 7, 3, 0, 4, 6, 8, 5]),
             goal: (0, [0, 1, 2, 3, 4, 5, 6, 7, 8]),
         };
-        let mut solution = &breadth_first_search(&p).unwrap();
+        let mut solution = &breadth_first_search(&p).0.unwrap();
+        let expected = [1, 0, 3, 2, 1, 2, 3, 0, 0, 3];
+        let mut expected = expected.into_iter().rev();
+        assert_eq!(solution.action.unwrap(), expected.next().unwrap());
+        while let Some(parent) = &solution.parent {
+            solution = parent;
+            if let Some(action) = solution.action {
+                assert_eq!(action, expected.next().unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_star_search() {
+        let p = EightPuzzle {
+            initial: (4, [1, 2, 7, 3, 0, 4, 6, 8, 5]),
+            goal: (0, [0, 1, 2, 3, 4, 5, 6, 7, 8]),
+        };
+        let mut solution = &a_star_search(&p, |node| {
+            let mut h = 0;
+            for (i, p) in node.state.1.iter().enumerate() {
+                if i != *p as usize {
+                    h += 1;
+                }
+            }
+            h
+        })
+        .0
+        .unwrap();
         let expected = [1, 0, 3, 2, 1, 2, 3, 0, 0, 3];
         let mut expected = expected.into_iter().rev();
         assert_eq!(solution.action.unwrap(), expected.next().unwrap());
